@@ -18,6 +18,7 @@ type Search = {
   inProgress: string;
   ETA: number;
   reset: () => void;
+  keyboard: Keyboard;
 };
 
 const pesquisa: Search = {
@@ -32,6 +33,7 @@ const pesquisa: Search = {
     pesquisa.inProgress = '';
     pesquisa.ETA = 0;
   },
+  keyboard: new Keyboard().text('/pesquisar').text('/config').text('/cancelar').resized(),
 };
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -40,7 +42,9 @@ const strIncludes = (str: string, list: string[]): string[] | [] => list.filter(
 
 const search = async (pesq: Search, ctx: Context, message: Message.TextMessage): Promise<void> => {
   const browser = await puppeteer.launch({
+    executablePath: '/usr/bin/google-chrome',
     headless: true,
+    args: ['--no-sandbox'],
   });
 
   const homeUrl = `https://br.linkedin.com/jobs/search?keywords=${pesq.jobRole}&location=Brazil&f_TPR=r${pesq.datePosted}&position=1&pageNum=0`;
@@ -70,7 +74,9 @@ const search = async (pesq: Search, ctx: Context, message: Message.TextMessage):
     );
 
     if (whileObj.lastPercent !== percentage) {
-      await ctx.api.editMessageText(message.chat.id, message.message_id, `🤖Carregando lista de vagas... ${percentage}%`);
+      await ctx.api
+        .editMessageText(message.chat.id, message.message_id, `🤖Carregando lista de vagas... ${percentage}%`)
+        .catch(err => console.log(`Erro ao editar mensagem, ${err}`));
       whileObj.lastPercent = percentage;
       whileObj.elapsed = 0;
     }
@@ -110,26 +116,30 @@ const search = async (pesq: Search, ctx: Context, message: Message.TextMessage):
   for await (const [idx, job] of jobs.entries()) {
     if (pesq.revoke) {
       pesq.revoke = false;
-      await ctx.api.editMessageText(
+      await ctx.api
+        .editMessageText(
+          message.chat.id,
+          message.message_id,
+          `🤖Processando... ${idx + 1}/${jobs.length} vagas` +
+            `\nAdicionadas: ${resultados.length}` +
+            `\nBloqueadas: ${bloqueados.length}` +
+            (pesquisa.inProgress && `\nETA:` + sec2RelativeTime(pesquisa.ETA)) +
+            `\nCancelado!`,
+        )
+        .catch(err => console.log(`Erro ao editar mensagem, ${err}`));
+      break;
+    }
+
+    await ctx.api
+      .editMessageText(
         message.chat.id,
         message.message_id,
         `🤖Processando... ${idx + 1}/${jobs.length} vagas` +
           `\nAdicionadas: ${resultados.length}` +
           `\nBloqueadas: ${bloqueados.length}` +
-          (pesquisa.inProgress && `\nETA:` + sec2RelativeTime(pesquisa.ETA)) +
-          `\nCancelado!`,
-      );
-      break;
-    }
-
-    await ctx.api.editMessageText(
-      message.chat.id,
-      message.message_id,
-      `🤖Processando... ${idx + 1}/${jobs.length} vagas` +
-        `\nAdicionadas: ${resultados.length}` +
-        `\nBloqueadas: ${bloqueados.length}` +
-        (pesquisa.inProgress && `\nETA:` + sec2RelativeTime(pesquisa.ETA)),
-    );
+          (pesquisa.inProgress && `\nETA:` + sec2RelativeTime(pesquisa.ETA)),
+      )
+      .catch(err => console.log(`Erro ao editar mensagem, ${err}`));
     const palavrasBloqueadasTitulo = strIncludes(job.title, pesq.blacklisted);
     if (palavrasBloqueadasTitulo.length > 0) {
       bloqueados.push(
@@ -248,7 +258,9 @@ const search = async (pesq: Search, ctx: Context, message: Message.TextMessage):
 
 const botBusy = (ctx: Context): boolean => {
   if (pesquisa.inProgress) {
-    ctx.reply(`Há uma pesquisa em andamento por ${pesquisa.inProgress}, aguarde! (aprox. ${sec2RelativeTime(pesquisa.ETA)})`);
+    ctx.reply(`Há uma pesquisa em andamento por ${pesquisa.inProgress}, aguarde! (aprox. ${sec2RelativeTime(pesquisa.ETA)})`, {
+      reply_markup: pesquisa.keyboard,
+    });
     return true;
   }
   return false;
@@ -265,7 +277,6 @@ const sec2RelativeTime = (sec: number): string => {
 const bot = new Bot(BOT_TOKEN);
 
 bot.command('start', ctx => {
-  const keyboard = new Keyboard().text('/pesquisar').text('/config').text('/cancelar').resized();
   ctx.reply(
     'Olá, eu sou o bot de pesquisa de vagas do linkedin!' +
       '\n\nPara começar, digite /pesquisar + o cargo que deseja pesquisar, por exemplo: /pesquisar dev' +
@@ -273,7 +284,7 @@ bot.command('start', ctx => {
       '\n\nPara alterar o período, digite /periodo + tempo em segundos, por exemplo: /periodo 84600' +
       '\n\nPara adicionar palavras na lista de bloqueio envie /bloquear e em seguida as palavras, uma por linha' +
       '\n\nPara ver as configurações atuais, digite /config',
-    { reply_markup: keyboard },
+    { reply_markup: pesquisa.keyboard },
   );
 });
 
@@ -288,11 +299,11 @@ bot.command('bloquear', (ctx: Context) => {
       .filter(e => e),
   ];
   if (pesquisa.blacklisted.length > 0) {
-    ctx.reply(`Palavras bloqueadas: ${pesquisa.blacklisted.join(', ')}`);
+    ctx.reply(`Palavras bloqueadas: ${pesquisa.blacklisted.join(', ')}`, { reply_markup: pesquisa.keyboard });
   } else {
-    ctx.reply('A lista de palavras bloqueadas ficou vazia!');
+    ctx.reply('A lista de palavras bloqueadas ficou vazia!', { reply_markup: pesquisa.keyboard });
   }
-  ctx.reply('Palavras bloqueadas atualizadas!');
+  ctx.reply('Palavras bloqueadas atualizadas!', { reply_markup: pesquisa.keyboard });
 });
 
 bot.command('pesquisar', async ctx => {
@@ -302,13 +313,12 @@ bot.command('pesquisar', async ctx => {
 
   pesquisa.inProgress = ctx.message?.from?.id.toString() || '';
   pesquisa.jobRole = ctx.message?.text.replace(/\/pesquisar/, '').trim() || pesquisa.jobRole;
-  const keyboard = new Keyboard().text('/pesquisar').text('/config').text('/cancelar').resized();
   await ctx.reply(
     `*Cargo:* ${pesquisa.jobRole}` +
       `\n*Palavras bloqueadas:*` +
       `\n\`${pesquisa.blacklisted.join('\n')}\`` +
       `\n*Período:* Desde ${sec2RelativeTime(pesquisa.datePosted)} atrás`,
-    { parse_mode: 'Markdown', reply_markup: keyboard },
+    { parse_mode: 'Markdown', reply_markup: pesquisa.keyboard },
   );
   const processingMessage: Message.TextMessage = await ctx.reply('🤖Processando...');
   search(pesquisa, ctx, processingMessage).then(async () => {
@@ -317,7 +327,7 @@ bot.command('pesquisar', async ctx => {
       await ctx.replyWithDocument(file).catch(err => console.log(err));
       fs.rmSync('resultados.txt');
     } else {
-      await ctx.reply('Nenhum resultado encontrado!');
+      await ctx.reply('Nenhum resultado encontrado!', { reply_markup: pesquisa.keyboard });
     }
     if (fs.existsSync('bloqueados.txt')) {
       const file = new InputFile('bloqueados.txt');
@@ -334,18 +344,18 @@ bot.command('config', ctx => {
       `\n*Período:* Desde ${sec2RelativeTime(pesquisa.datePosted)} atrás` +
       `\n*Pesq. em andamento:* ${pesquisa.inProgress ? 'Sim' : 'Não'}` +
       (pesquisa.inProgress && `\n*ETA:*` + sec2RelativeTime(pesquisa.ETA)),
-    { parse_mode: 'Markdown' },
+    { parse_mode: 'Markdown', reply_markup: pesquisa.keyboard },
   );
 });
 
 bot.command('cancelar', ctx => {
   if (ctx.message?.from?.id.toString() === pesquisa.inProgress) {
     pesquisa.revoke = true;
-    ctx.reply('Pesquisa cancelada!');
+    ctx.reply('Pesquisa cancelada!', { reply_markup: pesquisa.keyboard });
   } else if (pesquisa.inProgress) {
-    ctx.reply(`Somente o usuário de id ${pesquisa.inProgress} pode cancelar a pesquisa!`);
+    ctx.reply(`Somente o usuário de id ${pesquisa.inProgress} pode cancelar a pesquisa!`, { reply_markup: pesquisa.keyboard });
   } else {
-    ctx.reply('Nenhuma pesquisa em andamento!');
+    ctx.reply('Nenhuma pesquisa em andamento!', { reply_markup: pesquisa.keyboard });
   }
 });
 
@@ -354,7 +364,7 @@ bot.command('periodo', ctx => {
     return;
   }
   pesquisa.datePosted = Number(ctx.message?.text.replace(/\/periodo /, '')) || 86400;
-  ctx.reply(`Período atualizado para ${sec2RelativeTime(pesquisa.datePosted)}`);
+  ctx.reply(`Período atualizado para ${sec2RelativeTime(pesquisa.datePosted)}`, { reply_markup: pesquisa.keyboard });
 });
 
 bot.start();
