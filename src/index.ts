@@ -1,4 +1,4 @@
-import { Bot, Context, InputFile } from 'grammy';
+import { Bot, Context, InputFile, Keyboard } from 'grammy';
 import puppeteer, { Page } from 'puppeteer';
 import fs from 'fs';
 import { Message } from 'grammy/out/platform.node';
@@ -264,7 +264,8 @@ const sec2RelativeTime = (sec: number): string => {
 
 const bot = new Bot(BOT_TOKEN);
 
-bot.command('start', ctx =>
+bot.command('start', ctx => {
+  const keyboard = new Keyboard().text('/pesquisar').text('/config').text('/cancelar').resized();
   ctx.reply(
     'Olá, eu sou o bot de pesquisa de vagas do linkedin!' +
       '\n\nPara começar, digite /pesquisar + o cargo que deseja pesquisar, por exemplo: /pesquisar dev' +
@@ -272,8 +273,9 @@ bot.command('start', ctx =>
       '\n\nPara alterar o período, digite /periodo + tempo em segundos, por exemplo: /periodo 84600' +
       '\n\nPara adicionar palavras na lista de bloqueio envie /bloquear e em seguida as palavras, uma por linha' +
       '\n\nPara ver as configurações atuais, digite /config',
-  ),
-);
+    { reply_markup: keyboard },
+  );
+});
 
 bot.command('bloquear', (ctx: Context) => {
   if (botBusy(ctx)) {
@@ -300,12 +302,13 @@ bot.command('pesquisar', async ctx => {
 
   pesquisa.inProgress = ctx.message?.from?.id.toString() || '';
   pesquisa.jobRole = ctx.message?.text.replace(/\/pesquisar/, '').trim() || pesquisa.jobRole;
+  const keyboard = new Keyboard().text('/pesquisar').text('/config').text('/cancelar').resized();
   await ctx.reply(
     `*Cargo:* ${pesquisa.jobRole}` +
       `\n*Palavras bloqueadas:*` +
       `\n\`${pesquisa.blacklisted.join('\n')}\`` +
       `\n*Período:* Desde ${sec2RelativeTime(pesquisa.datePosted)} atrás`,
-    { parse_mode: 'Markdown' },
+    { parse_mode: 'Markdown', reply_markup: keyboard },
   );
   const processingMessage: Message.TextMessage = await ctx.reply('🤖Processando...');
   search(pesquisa, ctx, processingMessage).then(async () => {
