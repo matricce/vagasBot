@@ -19,6 +19,7 @@ type Search = {
   ETA: number;
   reset: () => void;
   keyboard: Keyboard;
+  browser?: puppeteer.Browser;
 };
 
 const pesquisa: Search = {
@@ -41,18 +42,17 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const strIncludes = (str: string, list: string[]): string[] | [] => list.filter(item => str.match(new RegExp(`\\b${item}\\b`, 'i')));
 
 const search = async (pesq: Search, ctx: Context, message: Message.TextMessage): Promise<void> => {
-  const browser = await puppeteer.launch({
-    executablePath: '/usr/bin/google-chrome',
-    headless: true,
-    args: ['--no-sandbox'],
-  });
-
   const homeUrl = `https://br.linkedin.com/jobs/search?keywords=${pesq.jobRole}&location=Brazil&f_TPR=r${pesq.datePosted}&position=1&pageNum=0`;
 
   const resultados: string[] = [];
   const bloqueados: string[] = [];
 
-  const page = await browser.newPage();
+  const pages = [...(await pesq.browser!.pages())];
+  const page = pages[0];
+  pages.shift();
+  for (const pg in pages) {
+    await pages[pg].close();
+  }
   await page.goto(homeUrl);
 
   while (page.url().includes('authwall?trk=qf&original_referer')) {
@@ -98,7 +98,7 @@ const search = async (pesq: Search, ctx: Context, message: Message.TextMessage):
     }
   }
 
-  const newTab = await browser.newPage();
+  const newTab = await pesq.browser!.newPage();
 
   const jobs = await page.evaluate(() =>
     [...document.querySelectorAll('.jobs-search__results-list > li > div')].map(div => {
@@ -367,4 +367,11 @@ bot.command('periodo', ctx => {
   ctx.reply(`Período atualizado para ${sec2RelativeTime(pesquisa.datePosted)}`, { reply_markup: pesquisa.keyboard });
 });
 
-bot.start();
+const init = async () => {
+  pesquisa.browser = await puppeteer.launch({
+    headless: true,
+  });
+  bot.start();
+};
+
+init();
