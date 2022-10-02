@@ -14,6 +14,7 @@
     "typescript": "^4.7.4"
   },
   "scripts": {
+    "build": "tsc",
     "start:dev": "nodemon --watch src src/index.ts"
   },
   "dependencies": {

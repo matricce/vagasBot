@@ -1,7 +1,7 @@
 import { Bot, Context, InputFile, Keyboard } from 'grammy';
 import puppeteer, { Page } from 'puppeteer';
 import fs from 'fs';
-import { Message } from 'grammy/out/platform.node';
+import { Message } from 'grammy/out/types.node';
 const { htmlToText } = require('html-to-text');
 import 'dotenv/config';
 
@@ -276,12 +276,12 @@ const sec2RelativeTime = (sec: number): string => {
 
 const bot = new Bot(BOT_TOKEN);
 
-bot.command('start', ctx => {
+bot.command(['start', 'help', 'ajuda'], ctx => {
   ctx.reply(
     'Olá, eu sou o bot de pesquisa de vagas do linkedin!' +
       '\n\nPara começar, digite /pesquisar + o cargo que deseja pesquisar, por exemplo: /pesquisar dev' +
       '\n\nPara cancelar a pesquisa, digite /cancelar' +
-      '\n\nPara alterar o período, digite /periodo + tempo em segundos, por exemplo: /periodo 84600' +
+      '\n\nPara alterar o período, digite /periodo + tempo em segundos, por exemplo: /periodo 86400' +
       '\n\nPara adicionar palavras na lista de bloqueio envie /bloquear e em seguida as palavras, uma por linha' +
       '\n\nPara ver as configurações atuais, digite /config',
     { reply_markup: pesquisa.keyboard },
@@ -370,6 +370,8 @@ bot.command('periodo', ctx => {
 const init = async () => {
   pesquisa.browser = await puppeteer.launch({
     headless: true,
+    executablePath: process.env.CHROME_PATH,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
   bot.start();
 };
